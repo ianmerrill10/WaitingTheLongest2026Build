@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://waitingthelongest.com/schemas/animal.submission.schema.json",
+  "title": "AnimalSubmission",
+  "description": "All-species adoptable-animal submission record for the WaitingTheLongest Intake API. SOURCE OF TRUTH is components.schemas.AnimalSubmission/AnimalCore in openapi.yaml; this standalone file is a derived artifact for validators, CSV checking, SDK generation, and the conformance suite, and MUST be regenerated whenever the spec changes. It is self-contained and uses additionalProperties:false for maximum validator compatibility. Controlled-vocabulary values and their verification status are documented in SAC_VOCABULARY_MAPPING.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["external_id", "name", "species", "intake_date"],
+  "if": {
+    "properties": { "species": { "const": "other" } },
+    "required": ["species"]
+  },
+  "then": {
+    "required": ["species_detail"]
+  },
+  "properties": {
+    "external_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "description": "The organization's stable identifier and the upsert key."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "species": {
+      "type": "string",
+      "description": "SAC IOD species categories.",
+      "enum": ["dog", "cat", "rabbit", "equine", "small_mammal", "bird", "reptile_amphibian", "farm_animal", "other"]
+    },
+    "species_detail": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Free-text variety or morph. Required when species is 'other'."
+    },
+    "intake_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Authoritative date the animal entered the organization's care. Server rejects future dates and dates before 1990-01-01. Drives the core ranking metric."
+    },
+    "intake_type": {
+      "type": "string",
+      "description": "SAC IOD live-intake category. First four values confirmed against SAC's published matrix; the rest follow the standard framework and must be confirmed before v1.0.",
+      "enum": [
+        "stray_at_large",
+        "relinquished_by_owner",
+        "owner_intended_euthanasia",
+        "transfer_in_in_state",
+        "transfer_in_out_of_state",
+        "seized_custody",
+        "born_in_care",
+        "other_intake"
+      ]
+    },
+    "sex": {
+      "type": "string",
+      "enum": ["male", "female", "unknown"]
+    },
+    "altered": {
+      "type": "string",
+      "description": "Spay/neuter status.",
+      "enum": ["altered", "intact", "unknown"]
+    },
+    "size": {
+      "type": "string",
+      "description": "Primarily meaningful for dogs and cats; optional for other species.",
+      "enum": ["small", "medium", "large", "xlarge"]
+    },
+    "primary_breed": {
+      "type": "string",
+      "maxLength": 80,
+      "description": "Normalized server-side against a controlled list; unmapped values are flagged for review, never silently dropped."
+    },
+    "secondary_breed": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "is_mixed": {
+      "type": "boolean"
+    },
+    "primary_color": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "coat_length": {
+      "type": "string",
+      "enum": ["hairless", "short", "medium", "long", "wire", "curly", "double", "unknown"]
+    },
+    "estimated_birthdate": {
+      "type": "string",
+      "format": "date",
+      "description": "Provide this OR age_months. If both are given they must agree within 60 days (server rule)."
+    },
+    "age_months": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600
+    },
+    "sac_age_group": {
+      "type": "string",
+      "description": "SAC IOD age grouping.",
+      "enum": ["under_5_months", "adult", "unknown"]
+    },
+    "weight_kg": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1500,
+      "description": "Kilograms. Unit-explicit to remove lb/kg ambiguity."
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 5000
+    },
+    "adoption_fee": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100000,
+      "description": "In adoption_fee_currency. Omit when unknown rather than guessing 0."
+    },
+    "adoption_fee_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "default": "USD",
+      "description": "ISO 4217 code."
+    },
+    "special_needs": {
+      "type": "boolean"
+    },
+    "good_with_dogs": { "$ref": "#/$defs/trit" },
+    "good_with_cats": { "$ref": "#/$defs/trit" },
+    "good_with_kids": { "$ref": "#/$defs/trit" },
+    "photo_upload_ids": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "type": "string", "format": "uuid" },
+      "description": "IDs returned by the photo-upload endpoint. Preferred over raw URLs."
+    },
+    "photo_urls": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "type": "string", "format": "uri" },
+      "description": "Externally hosted image URLs; validated and re-hosted server-side."
+    },
+    "listing_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "The organization's own adoption page for this animal."
+    },
+    "status": {
+      "type": "string",
+      "description": "WaitingTheLongest operational listing status. Not a SAC field.",
+      "enum": ["adoptable", "pending", "adopted", "on_hold", "not_available", "removed"],
+      "default": "adoptable"
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where the animal can be met. Falls back to the organization's location if omitted.",
+      "properties": {
+        "postal_code": { "type": "string", "maxLength": 12 },
+        "city": { "type": "string", "maxLength": 80 },
+        "state": { "type": "string", "minLength": 2, "maxLength": 2, "description": "USPS 2-letter code (US)." },
+        "country": { "type": "string", "pattern": "^[A-Z]{2}$", "default": "US", "description": "ISO 3166-1 alpha-2." }
+      }
+    }
+  },
+  "$defs": {
+    "trit": {
+      "type": "string",
+      "description": "Three-valued behavioral flag. 'unknown' is explicit and never inferred from absence.",
+      "enum": ["yes", "no", "unknown"]
+    }
+  }
+}

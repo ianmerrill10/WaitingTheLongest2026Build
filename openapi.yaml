@@ -1,0 +1,861 @@
+openapi: 3.1.0
+info:
+  title: WaitingTheLongest Intake API
+  version: 0.1.0
+  summary: Public, open intake API for adoptable animals — all species.
+  description: >
+    Lets shelters and rescues submit their own adoptable animals directly to
+    WaitingTheLongest. The load-bearing field is `intake_date` — the day the
+    animal entered the organization's care — because the platform ranks animals
+    by how long they have been waiting, and a first-party intake date is the
+    only trustworthy version of that number.
+
+
+    Controlled vocabularies for `species`, `intake_type`, and `outcome_type`
+    follow the Shelter Animals Count Intake & Outcome Database (IOD) so submitted
+    values mean what shelters already record. See SAC_VOCABULARY_MAPPING.md for
+    the field-by-field mapping and, importantly, the verification status of each
+    enumerated value (some are confirmed against SAC's published matrix; a few
+    follow the standard framework and must be reconciled against the current
+    official SAC IOD document before v1.0 is frozen).
+
+
+    Data-accuracy posture, by design: submission bodies reject unknown fields,
+    every value is range/format/enum constrained, submissions are idempotent
+    (keyed on organization + external_id), the server records provenance and a
+    confidence score for every record, and nothing is silently accepted or
+    silently dropped — a validation failure returns an RFC 9457 problem document
+    with a field-level error list.
+
+
+    Tooling note: strictness on request bodies uses JSON Schema 2020-12
+    `unevaluatedProperties`, which requires a 2020-12-aware validator/generator.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: WaitingTheLongest
+    url: https://waitingthelongest.com
+
+servers:
+  - url: https://api.waitingthelongest.com
+    description: Production
+  - url: http://localhost:8000
+    description: Local reference server (Docker)
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: animals
+    description: Submit, update, and reconcile adoptable-animal records.
+  - name: status
+    description: Lightweight status and outcome updates — the most frequent write.
+  - name: photos
+    description: Presigned uploads for animal photos.
+  - name: organizations
+    description: Onboarding and account inspection.
+  - name: meta
+    description: Health and version.
+
+paths:
+  /v1/animals:
+    post:
+      tags: [animals]
+      summary: Submit (upsert) one animal
+      description: >
+        Idempotent upsert keyed on (authenticated organization, external_id).
+        First submission creates the record (201); re-sending the same
+        external_id updates it (200). Supply an Idempotency-Key to make network
+        retries safe even before external_id is known to the server.
+      operationId: submitAnimal
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnimalSubmission'
+      responses:
+        '200':
+          description: Existing record updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Animal' }
+        '201':
+          description: New record created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Animal' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationProblem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    get:
+      tags: [animals]
+      summary: List this organization's submitted animals
+      description: >
+        Reconciliation endpoint. Returns only records owned by the authenticated
+        organization so a shelter can verify exactly what the system stored.
+        Cursor-paginated.
+      operationId: listOwnAnimals
+      parameters:
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/UpdatedSince'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of animals.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnimalPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/animals/{external_id}:
+    parameters:
+      - $ref: '#/components/parameters/ExternalId'
+    get:
+      tags: [animals]
+      summary: Read back one animal
+      operationId: getAnimal
+      responses:
+        '200':
+          description: The record as stored, including server-computed fields.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Animal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [animals]
+      summary: Partially update one animal
+      description: >
+        Merge-patch semantics: only the fields present in the body change. The
+        same per-field validation as submission applies. external_id is
+        immutable and must not appear in the body.
+      operationId: patchAnimal
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: '#/components/schemas/AnimalPatch' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Animal' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationProblem' }
+    delete:
+      tags: [animals]
+      summary: Withdraw one animal (soft delete)
+      description: >
+        Marks the listing removed and retains it in history. Optionally record
+        why via the outcome parameter so length-of-stay statistics stay complete.
+      operationId: deleteAnimal
+      parameters:
+        - name: outcome
+          in: query
+          required: false
+          description: Optional outcome reason for statistics (e.g., adoption).
+          schema: { $ref: '#/components/schemas/OutcomeType' }
+      responses:
+        '204': { description: Withdrawn. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/animals/{external_id}/status:
+    parameters:
+      - $ref: '#/components/parameters/ExternalId'
+    post:
+      tags: [status]
+      summary: Update listing status / record an outcome
+      description: >
+        The cheapest and most frequent write. Use it to keep a listing fresh, to
+        mark it pending or adopted, or to record a terminal outcome. Keeping
+        status current is what prevents already-adopted animals from being shown.
+      operationId: updateStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StatusUpdate' }
+      responses:
+        '200':
+          description: Status updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Animal' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/animals/batch:
+    post:
+      tags: [animals]
+      summary: Bulk submit animals (asynchronous)
+      description: >
+        Accepts up to 1000 records (JSON array or NDJSON) and returns 202 with a
+        job id. Each record is validated and de-duplicated independently, so a
+        partial batch still lands the good records; the job result reports a
+        per-record outcome and field-level errors for any rejects.
+      operationId: submitBatch
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchSubmitRequest' }
+          application/x-ndjson:
+            schema:
+              type: string
+              description: One AnimalSubmission JSON object per line.
+      responses:
+        '202':
+          description: Accepted for processing.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchJob' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/batch/{job_id}:
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [animals]
+      summary: Get batch job status and per-record results
+      operationId: getBatchJob
+      responses:
+        '200':
+          description: Job status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatchJob' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/uploads/photos:
+    post:
+      tags: [photos]
+      summary: Request a presigned photo upload URL
+      description: >
+        Returns a short-lived URL to PUT image bytes directly to storage. On
+        finalize the server validates format and dimensions, screens content,
+        strips EXIF for privacy, and computes a perceptual hash that feeds
+        deduplication.
+      operationId: createPhotoUpload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PhotoUploadRequest' }
+      responses:
+        '201':
+          description: Presigned upload created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PhotoUploadResponse' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/organizations:
+    post:
+      tags: [organizations]
+      summary: Apply for an organization account
+      description: >
+        Public endpoint. Creates a pending organization and issues a Tier 0
+        (self-asserted) API key immediately so onboarding is never blocked.
+        Promotion to Tier 1 is asynchronous, via an EIN match against the IRS
+        Publication 78 dataset, a verified .gov domain, or a confirmed presence
+        on an established aggregator such as RescueGroups.
+      operationId: applyOrganization
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationApplication' }
+      responses:
+        '201':
+          description: Application accepted; Tier 0 key issued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationCreated' }
+        '400': { $ref: '#/components/responses/ValidationProblem' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/organizations/me:
+    get:
+      tags: [organizations]
+      summary: Inspect the authenticated organization
+      operationId: getOwnOrganization
+      responses:
+        '200':
+          description: Organization profile, tier, and limits.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/healthz:
+    get:
+      tags: [meta]
+      summary: Liveness probe
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: Service healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: ok }
+
+  /v1/version:
+    get:
+      tags: [meta]
+      summary: Spec and server version
+      operationId: version
+      security: []
+      responses:
+        '200':
+          description: Version info.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  spec_version: { type: string, examples: ["0.1.0"] }
+                  server_version: { type: string }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Per-organization API key. Every write is audit-logged against the key id.
+
+  parameters:
+    ExternalId:
+      name: external_id
+      in: path
+      required: true
+      description: The organization's own stable identifier for the animal.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._:-]+$'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Client-generated UUID; a replay returns the original result rather than acting twice.
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string }
+    StatusFilter:
+      name: status
+      in: query
+      required: false
+      schema: { $ref: '#/components/schemas/ListingStatus' }
+    UpdatedSince:
+      name: updated_since
+      in: query
+      required: false
+      schema: { type: string, format: date-time }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: No such record for this organization.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflicting state (for example, an organization that already exists).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RateLimited:
+      description: Rate limit exceeded for this key's tier.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PayloadTooLarge:
+      description: Batch exceeds the per-request record limit.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ValidationProblem:
+      description: The submission failed validation; see errors[] for field-level detail.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ValidationProblem' }
+
+  schemas:
+
+    # =====================================================================
+    # Controlled vocabularies — see SAC_VOCABULARY_MAPPING.md for the mapping
+    # to Shelter Animals Count and the verification status of each value.
+    # =====================================================================
+
+    Species:
+      type: string
+      description: SAC IOD species categories. "other" requires species_detail.
+      enum: [dog, cat, rabbit, equine, small_mammal, bird, reptile_amphibian, farm_animal, other]
+
+    IntakeType:
+      type: string
+      description: >
+        SAC IOD live-intake category. Confirmed values: stray_at_large,
+        relinquished_by_owner, owner_intended_euthanasia, transfer_in_in_state.
+        The remaining values follow the standard framework and must be confirmed
+        against the current official SAC IOD matrix before v1.0.
+      enum:
+        - stray_at_large
+        - relinquished_by_owner
+        - owner_intended_euthanasia
+        - transfer_in_in_state
+        - transfer_in_out_of_state
+        - seized_custody
+        - born_in_care
+        - other_intake
+
+    OutcomeType:
+      type: string
+      description: SAC IOD outcome category, live and non-live. Confirm full set against the official matrix.
+      enum:
+        - adoption
+        - return_to_owner
+        - transfer_out_in_state
+        - transfer_out_out_of_state
+        - returned_to_field
+        - other_live_outcome
+        - died_in_care
+        - lost_in_care
+        - shelter_euthanasia
+
+    ListingStatus:
+      type: string
+      description: WaitingTheLongest operational listing status. Not a SAC field.
+      enum: [adoptable, pending, adopted, on_hold, not_available, removed]
+
+    Sex:
+      type: string
+      enum: [male, female, unknown]
+
+    AlteredStatus:
+      type: string
+      description: Spay/neuter status.
+      enum: [altered, intact, unknown]
+
+    Size:
+      type: string
+      description: Primarily meaningful for dogs and cats; optional for other species.
+      enum: [small, medium, large, xlarge]
+
+    CoatLength:
+      type: string
+      enum: [hairless, short, medium, long, wire, curly, double, unknown]
+
+    SacAgeGroup:
+      type: string
+      description: SAC IOD age grouping (coarse, by design).
+      enum: [under_5_months, adult, unknown]
+
+    Trit:
+      type: string
+      description: Three-valued behavioral flag. "unknown" is explicit and is never inferred from absence.
+      enum: [yes, no, unknown]
+
+    SubmissionLocation:
+      type: object
+      additionalProperties: false
+      description: Where the animal can be met. Falls back to the organization's location if omitted.
+      properties:
+        postal_code: { type: string, maxLength: 12 }
+        city: { type: string, maxLength: 80 }
+        state:
+          type: string
+          minLength: 2
+          maxLength: 2
+          description: USPS 2-letter code (US).
+        country:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          default: US
+          description: ISO 3166-1 alpha-2.
+
+    # =====================================================================
+    # AnimalCore — shared field definitions. Deliberately NOT strict on its
+    # own so it can be composed via allOf; strictness is applied by the outer
+    # schemas using unevaluatedProperties (the correct 2020-12 pattern, which
+    # avoids the additionalProperties-with-allOf footgun).
+    # =====================================================================
+
+    AnimalCore:
+      type: object
+      properties:
+        external_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
+          description: The organization's stable identifier and the upsert key.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        species:
+          $ref: '#/components/schemas/Species'
+        species_detail:
+          type: string
+          maxLength: 120
+          description: Free-text variety or morph (e.g., Holland Lop, Ball Python, Quarter Horse). Required when species is "other".
+        intake_date:
+          type: string
+          format: date
+          description: >
+            Authoritative date the animal entered the organization's care. The
+            server rejects values in the future or before 1990-01-01. This field
+            drives the platform's core ranking, so it is required and validated
+            strictly. (JSON Schema cannot express the date range; the server
+            enforces it.)
+        intake_type:
+          $ref: '#/components/schemas/IntakeType'
+        sex:
+          $ref: '#/components/schemas/Sex'
+        altered:
+          $ref: '#/components/schemas/AlteredStatus'
+        size:
+          $ref: '#/components/schemas/Size'
+        primary_breed:
+          type: string
+          maxLength: 80
+          description: Normalized server-side against a controlled list; unmapped values are flagged for review, never silently dropped.
+        secondary_breed:
+          type: string
+          maxLength: 80
+        is_mixed:
+          type: boolean
+        primary_color:
+          type: string
+          maxLength: 40
+        coat_length:
+          $ref: '#/components/schemas/CoatLength'
+        estimated_birthdate:
+          type: string
+          format: date
+          description: Provide this OR age_months. If both are given they must agree within 60 days or the record is flagged (server rule).
+        age_months:
+          type: integer
+          minimum: 0
+          maximum: 600
+        sac_age_group:
+          $ref: '#/components/schemas/SacAgeGroup'
+        weight_kg:
+          type: number
+          minimum: 0
+          maximum: 1500
+          description: Kilograms. Unit-explicit on purpose, to remove lb/kg ambiguity.
+        description:
+          type: string
+          maxLength: 5000
+        adoption_fee:
+          type: number
+          minimum: 0
+          maximum: 100000
+          description: In adoption_fee_currency. Omit when unknown rather than guessing 0.
+        adoption_fee_currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          default: USD
+          description: ISO 4217 code.
+        special_needs:
+          type: boolean
+        good_with_dogs: { $ref: '#/components/schemas/Trit' }
+        good_with_cats: { $ref: '#/components/schemas/Trit' }
+        good_with_kids: { $ref: '#/components/schemas/Trit' }
+        photo_upload_ids:
+          type: array
+          maxItems: 12
+          items: { type: string, format: uuid }
+          description: IDs returned by POST /v1/uploads/photos. Preferred over raw URLs.
+        photo_urls:
+          type: array
+          maxItems: 12
+          items: { type: string, format: uri }
+          description: Externally hosted image URLs; validated and re-hosted server-side.
+        listing_url:
+          type: string
+          format: uri
+          description: The organization's own adoption page for this animal.
+        status:
+          $ref: '#/components/schemas/ListingStatus'
+          default: adoptable
+        location:
+          $ref: '#/components/schemas/SubmissionLocation'
+
+    # ---- Request body for POST /v1/animals (strict) ----
+    AnimalSubmission:
+      description: Body for submitting/upserting an animal. Rejects unknown fields.
+      allOf:
+        - $ref: '#/components/schemas/AnimalCore'
+      required: [external_id, name, species, intake_date]
+      if:
+        properties:
+          species: { const: other }
+        required: [species]
+      then:
+        required: [species_detail]
+      unevaluatedProperties: false
+
+    # ---- Request body for PATCH (strict; external_id immutable) ----
+    AnimalPatch:
+      description: Merge-patch body. Every field optional; external_id must be absent.
+      allOf:
+        - $ref: '#/components/schemas/AnimalCore'
+      not:
+        required: [external_id]
+      unevaluatedProperties: false
+
+    # ---- Response resource = core + server-computed fields ----
+    Animal:
+      description: A stored record, including server-computed and provenance fields.
+      allOf:
+        - $ref: '#/components/schemas/AnimalCore'
+        - type: object
+          properties:
+            id: { type: string, format: uuid, readOnly: true }
+            organization_id: { type: string, format: uuid, readOnly: true }
+            source:
+              type: string
+              readOnly: true
+              description: Origin of the record.
+              examples: [intake_api]
+            intake_age_days:
+              type: integer
+              readOnly: true
+              minimum: 0
+              description: Server-computed days since intake_date — the core ranking metric.
+            confidence_score:
+              type: number
+              readOnly: true
+              minimum: 0
+              maximum: 1
+              description: Per-record confidence from validation completeness, submitter tier, and cross-source corroboration.
+            submitter_verification_tier:
+              type: string
+              readOnly: true
+              enum: [tier_0_self_asserted, tier_1_verified, tier_2_trusted]
+            canonical_id:
+              type: string
+              format: uuid
+              readOnly: true
+              description: If merged during deduplication, the surviving canonical record's id.
+            is_canonical: { type: boolean, readOnly: true }
+            provenance:
+              type: object
+              readOnly: true
+              description: Source and timing metadata for auditability.
+              properties:
+                submitted_at: { type: string, format: date-time }
+                last_refreshed_at: { type: string, format: date-time }
+                last_verified_at: { type: string, format: date-time }
+            first_listed_at: { type: string, format: date-time, readOnly: true }
+            last_seen_at: { type: string, format: date-time, readOnly: true }
+            created_at: { type: string, format: date-time, readOnly: true }
+            updated_at: { type: string, format: date-time, readOnly: true }
+
+    AnimalPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Animal' }
+        next_cursor:
+          type: [string, "null"]
+          description: Pass as cursor to fetch the next page; null when the list is exhausted.
+
+    StatusUpdate:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/ListingStatus' }
+        outcome_type:
+          $ref: '#/components/schemas/OutcomeType'
+          description: Required when status becomes adopted or removed; powers length-of-stay statistics.
+        effective_at:
+          type: string
+          format: date-time
+          description: When the change took effect; defaults to receipt time.
+
+    BatchSubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [animals]
+      properties:
+        animals:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items: { $ref: '#/components/schemas/AnimalSubmission' }
+
+    BatchJob:
+      type: object
+      properties:
+        job_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [accepted, processing, completed, failed]
+        received: { type: integer, minimum: 0 }
+        succeeded: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        results:
+          type: array
+          description: Per-record outcome; present once status is completed.
+          items:
+            type: object
+            properties:
+              external_id: { type: string }
+              outcome:
+                type: string
+                enum: [created, updated, merged, rejected]
+              errors:
+                type: array
+                items: { $ref: '#/components/schemas/FieldError' }
+
+    PhotoUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [content_type]
+      properties:
+        content_type:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+        byte_size:
+          type: integer
+          minimum: 1
+          maximum: 15728640
+          description: Up to 15 MB.
+
+    PhotoUploadResponse:
+      type: object
+      properties:
+        upload_id: { type: string, format: uuid }
+        upload_url: { type: string, format: uri, description: PUT the image bytes to this URL. }
+        expires_at: { type: string, format: date-time }
+
+    OrganizationApplication:
+      type: object
+      additionalProperties: false
+      required: [legal_name, contact_email, country]
+      properties:
+        legal_name: { type: string, minLength: 2, maxLength: 200 }
+        ein:
+          type: string
+          pattern: '^\d{2}-?\d{7}$'
+          description: US Employer Identification Number; matched against IRS Publication 78 for Tier 1 verification.
+        website: { type: string, format: uri }
+        contact_email: { type: string, format: email }
+        contact_phone: { type: string, maxLength: 32 }
+        org_type:
+          type: string
+          enum: [municipal, humane_society, spca, rescue, foster_network, sanctuary, other]
+        postal_code: { type: string, maxLength: 12 }
+        state: { type: string, minLength: 2, maxLength: 2 }
+        country: { type: string, pattern: '^[A-Z]{2}$' }
+
+    OrganizationCreated:
+      type: object
+      properties:
+        organization_id: { type: string, format: uuid }
+        api_key:
+          type: string
+          description: Shown once at creation. Store it securely; rotate via support.
+        verification_tier:
+          type: string
+          enum: [tier_0_self_asserted]
+        rate_limit_per_hour: { type: integer }
+
+    Organization:
+      type: object
+      properties:
+        organization_id: { type: string, format: uuid }
+        legal_name: { type: string }
+        org_type: { type: string }
+        verification_tier:
+          type: string
+          enum: [tier_0_self_asserted, tier_1_verified, tier_2_trusted]
+        verification_method:
+          type: [string, "null"]
+          description: How Tier 1+ was established (e.g., ein_pub78, gov_domain, aggregator_confirmed).
+        rate_limit_per_hour: { type: integer }
+        active_listings: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    # ---- Errors (RFC 9457 problem+json) ----
+    FieldError:
+      type: object
+      required: [pointer, code, message]
+      properties:
+        pointer:
+          type: string
+          description: JSON Pointer to the offending field, e.g. /intake_date.
+        code:
+          type: string
+          description: Stable machine code, e.g. intake_date_in_future, enum_invalid, required_missing.
+        message: { type: string }
+
+    Problem:
+      type: object
+      description: RFC 9457 problem detail.
+      properties:
+        type: { type: string, format: uri, default: about:blank }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+
+    ValidationProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          properties:
+            errors:
+              type: array
+              items: { $ref: '#/components/schemas/FieldError' }

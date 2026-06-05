@@ -1,0 +1,28 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wtl
+      POSTGRES_PASSWORD: wtlpass
+      POSTGRES_DB: waitingthelongest
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://wtl:wtlpass@db:5432/waitingthelongest
+      API_VERSION: 0.1.0
+      CORS_ORIGINS: http://localhost:3000,https://waitingthelongest.com
+      PHOTO_STORAGE_BUCKET: animal-photos
+    depends_on:
+      - db
+
+volumes:
+  pgdata:

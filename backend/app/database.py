@@ -1,16 +1,18 @@
 import asyncpg
-from typing import AsyncIterator
+from contextlib import asynccontextmanager
 from .config import settings
 
+# Module-level pool reference
 _pool: asyncpg.Pool | None = None
 
 
 async def create_pool() -> asyncpg.Pool:
     global _pool
     _pool = await asyncpg.create_pool(
-        settings.database_url,
-        min_size=5,
-        max_size=20,
+        settings.DATABASE_URL,
+        min_size=2,
+        max_size=10,
+        command_timeout=30,
     )
     return _pool
 
@@ -22,9 +24,12 @@ async def close_pool():
         _pool = None
 
 
-async def get_db() -> AsyncIterator[asyncpg.Connection]:
-    """Dependency that provides a database connection from the pool."""
-    if _pool is None:
-        raise RuntimeError("Database pool not initialized. Call create_pool() first.")
+async def get_db() -> asyncpg.Connection:
+    """FastAPI dependency that yields a connection from the pool."""
     async with _pool.acquire() as conn:
         yield conn
+
+
+def get_pool() -> asyncpg.Pool:
+    """Get the pool directly for background tasks."""
+    return _pool

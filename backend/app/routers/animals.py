@@ -1,82 +1,104 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
-from typing import List, Optional
+"""Shelter intake API — authenticated endpoints for managing animals.
 
-from ..models.animal import AnimalCreate, AnimalUpdate, AnimalResponse
-from ..dependencies import get_org
-from ..services.animal_service import AnimalService
-from ..database import get_db
+All endpoints require X-API-Key authentication via the get_org dependency.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException
 import asyncpg
 
-router = APIRouter(prefix="/v1/animals", tags=["Shelter Animals"])
+from ..database import get_db
+from ..dependencies import get_org
+from ..services import animal_service
+from ..models.animal import AnimalCreate, AnimalUpdate
+
+router = APIRouter(prefix="/v1/intake/animals", tags=["Intake"])
 
 
-@router.post("", response_model=AnimalResponse, status_code=201)
+@router.post("", status_code=201)
 async def create_animal(
-    animal: AnimalCreate,
-    request: Request,
-    org=Depends(get_org),
+    data: AnimalCreate,
+    org: dict = Depends(get_org),
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    idempotency_key = request.headers.get("Idempotency-Key")
-    service = AnimalService(conn, org)
-    try:
-        result = await service.upsert_animal(animal, idempotency_key)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    """Create or upsert a single animal listing."""
+    result = await animal_service.upsert_animal(
+        conn, org["id"], data.model_dump(exclude_none=False)
+    )
+    return result
 
 
-@router.get("", response_model=List[AnimalResponse])
-async def list_animals(
-    cursor: Optional[str] = None,
-    limit: int = 20,
-    org=Depends(get_org),
+@router.get("")
+async def list_org_animals(
+    page: int = 1,
+    per_page: int = 20,
+    org: dict = Depends(get_org),
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    if limit < 1 or limit > 100:
-        raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
-    service = AnimalService(conn, org)
-    return await service.list_animals(cursor, limit)
+    """List the authenticated organization's own animals."""
+    rows = await conn.fetch(
+        """
+        SELECT * FROM animals
+        WHERE organization_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3
+        """,
+        org["id"],
+        per_page,
+        (page - 1) * per_page,
+    )
+    total = await conn.fetchval(
+        "SELECT COUNT(*) FROM animals WHERE organization_id = $1",
+        org["id"],
+    )
+    return {
+        "items": [animal_service._row_to_dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
 
 
-@router.get("/{external_id}", response_model=AnimalResponse)
-async def get_animal(
+@router.get("/{external_id}")
+async def get_org_animal(
     external_id: str,
-    org=Depends(get_org),
+    org: dict = Depends(get_org),
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    service = AnimalService(conn, org)
-    animal = await service.get_animal(external_id)
+    """Get a specific animal by external_id within the authenticated org."""
+    animal = await animal_service.get_animal_by_external_id(
+        conn, org["id"], external_id
+    )
     if not animal:
         raise HTTPException(status_code=404, detail="Animal not found")
     return animal
 
 
-@router.patch("/{external_id}", response_model=AnimalResponse)
-async def update_animal(
+@router.put("/{external_id}")
+async def update_org_animal(
     external_id: str,
-    update: AnimalUpdate,
-    org=Depends(get_org),
+    data: AnimalUpdate,
+    org: dict = Depends(get_org),
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    service = AnimalService(conn, org)
-    try:
-        animal = await service.update_animal(external_id, update)
-        if not animal:
-            raise HTTPException(status_code=404, detail="Animal not found")
-        return animal
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-
-@router.delete("/{external_id}", response_model=AnimalResponse)
-async def delete_animal(
-    external_id: str,
-    org=Depends(get_org),
-    conn: asyncpg.Connection = Depends(get_db),
-):
-    service = AnimalService(conn, org)
-    animal = await service.soft_delete_animal(external_id)
-    if not animal:
+    """Update an animal. Only provided fields are modified."""
+    result = await animal_service.update_animal(
+        conn, org["id"], external_id, data.model_dump(exclude_none=True)
+    )
+    if not result:
         raise HTTPException(status_code=404, detail="Animal not found")
-    return animal
+    return result
+
+
+@router.delete("/{external_id}")
+async def delete_org_animal(
+    external_id: str,
+    org: dict = Depends(get_org),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Soft-delete an animal (set status to 'removed')."""
+    result = await animal_service.update_animal(
+        conn, org["id"], external_id, {"status": "removed"}
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Animal not found")
+    return {"status": "removed", "external_id": external_id}

@@ -1,3 +1,4 @@
+"""WaitingTheLongest.com — FastAPI application entry point."""
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,23 +20,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="WaitingTheLongest.com API",
-    description="Shelter Intake API + Public Read API for WaitingTheLongest.com",
-    version=settings.api_version,
+    description="Shelter Intake API + Public Read API — ranking shelter dogs by longest waiting time",
+    version=settings.API_VERSION,
     lifespan=lifespan,
 )
 
 # CORS
-origins = [o.strip() for o in settings.cors_origins.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# Public endpoint rate limiting middleware
 @app.middleware("http")
 async def rate_limit_public_endpoints(request: Request, call_next):
     """Rate limit public endpoints to 100 req/min per IP."""
@@ -48,19 +47,20 @@ async def rate_limit_public_endpoints(request: Request, call_next):
                     "type": "about:blank",
                     "title": "Too Many Requests",
                     "status": 429,
-                    "detail": "Rate limit exceeded. Max 100 requests per minute.",
+                    "detail": f"Rate limit exceeded. Max {settings.PUBLIC_RATE_LIMIT} requests per minute.",
                 },
+                headers={"Retry-After": "60"},
             )
     return await call_next(request)
 
 
-# Register routers
+# Register all routers
+app.include_router(public.router)
 app.include_router(animals.router)
 app.include_router(status.router)
 app.include_router(batch.router)
 app.include_router(photos.router)
 app.include_router(organizations.router)
-app.include_router(public.router)
 app.include_router(meta.router)
 
 
@@ -68,6 +68,6 @@ app.include_router(meta.router)
 async def root():
     return {
         "name": "WaitingTheLongest.com API",
-        "version": settings.api_version,
+        "version": settings.API_VERSION,
         "docs": "/docs",
     }

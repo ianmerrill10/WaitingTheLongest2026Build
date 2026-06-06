@@ -1,29 +1,97 @@
+"""Photo management endpoints for animal listings.
+
+Handles adding, removing, and reordering photo URLs on animal records.
+All endpoints require X-API-Key authentication.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+import asyncpg
+
+from ..database import get_db
 from ..dependencies import get_org
-from ..services.photo_service import PhotoService
-from ..config import settings
+from ..services import animal_service, photo_service
 
-router = APIRouter(prefix="/v1/uploads", tags=["Uploads"])
+router = APIRouter(prefix="/v1/intake/animals", tags=["Photos"])
 
 
-@router.post("/photos")
-async def get_presigned_upload_url(
-    filename: str,
-    content_type: str = "image/jpeg",
-    org=Depends(get_org),
+class AddPhotoRequest(BaseModel):
+    photo_url: str
+    position: int | None = None
+
+
+class RemovePhotoRequest(BaseModel):
+    photo_url: str
+
+
+class ReorderPhotosRequest(BaseModel):
+    photo_urls: list[str]
+
+
+@router.post("/{external_id}/photos", status_code=201)
+async def add_photo(
+    external_id: str,
+    data: AddPhotoRequest,
+    org: dict = Depends(get_org),
+    conn: asyncpg.Connection = Depends(get_db),
 ):
-    allowed_types = {"image/jpeg", "image/png", "image/webp", "image/avif"}
-    if content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Unsupported image type")
-    if not filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".avif")):
-        raise HTTPException(status_code=400, detail="Invalid file extension")
-
-    service = PhotoService(
-        settings.photo_storage_url,
-        settings.photo_storage_bucket,
+    """Add a photo URL to an animal's listing."""
+    animal = await animal_service.get_animal_by_external_id(
+        conn, org["id"], external_id
     )
+    if not animal:
+        raise HTTPException(status_code=404, detail="Animal not found")
+
     try:
-        url = await service.create_presigned_upload_url(str(org["id"]), filename, content_type)
-        return {"url": url, "expires_in": 3600}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        result = await photo_service.add_photo_url(
+            conn, animal["id"], org["id"], data.photo_url, data.position
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.delete("/{external_id}/photos")
+async def remove_photo(
+    external_id: str,
+    data: RemovePhotoRequest,
+    org: dict = Depends(get_org),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Remove a photo URL from an animal's listing."""
+    animal = await animal_service.get_animal_by_external_id(
+        conn, org["id"], external_id
+    )
+    if not animal:
+        raise HTTPException(status_code=404, detail="Animal not found")
+
+    try:
+        result = await photo_service.remove_photo_url(
+            conn, animal["id"], org["id"], data.photo_url
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
+
+
+@router.put("/{external_id}/photos")
+async def reorder_photos(
+    external_id: str,
+    data: ReorderPhotosRequest,
+    org: dict = Depends(get_org),
+    conn: asyncpg.Connection = Depends(get_db),
+):
+    """Reorder an animal's photos by providing the full URL list in new order."""
+    animal = await animal_service.get_animal_by_external_id(
+        conn, org["id"], external_id
+    )
+    if not animal:
+        raise HTTPException(status_code=404, detail="Animal not found")
+
+    try:
+        result = await photo_service.reorder_photos(
+            conn, animal["id"], org["id"], data.photo_urls
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result

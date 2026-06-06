@@ -1,111 +1,132 @@
-import json
+"""
+batch_service.py -- Batch animal upsert processing.
+
+Processes batches inline (no background queue).  Each animal in the batch
+is upserted via animal_service.upsert_animal.  Results are returned
+immediately with created/updated/error counts.
+
+All queries use asyncpg parameterized placeholders ($1, $2, ...).
+"""
+
 import uuid
-from datetime import datetime, timezone
 from typing import Optional
+
 import asyncpg
-from ..models.animal import BatchSubmitRequest, AnimalCreate
-from .animal_service import AnimalService
+
+from .animal_service import upsert_animal
 
 
-class BatchService:
-    def __init__(self, conn: asyncpg.Connection, org: Optional[dict] = None):
-        self.conn = conn
-        self.org = org
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    async def create_job(self, batch: BatchSubmitRequest) -> dict:
-        """Create a batch job and persist the animal data for background processing."""
-        if not self.org:
-            raise ValueError("Organization required for batch")
+def _row_to_dict(row: asyncpg.Record) -> dict:
+    """Convert asyncpg Record to dict with UUID->str conversion."""
+    d = dict(row)
+    for k, v in d.items():
+        if isinstance(v, uuid.UUID):
+            d[k] = str(v)
+    return d
 
-        total = len(batch.animals)
-        row = await self.conn.fetchrow(
-            """INSERT INTO batch_jobs (organization_id, status, received)
-               VALUES ($1, 'accepted', $2) RETURNING *""",
-            self.org["id"], total,
-        )
-        job_id = row["id"]
 
-        # Persist animal data in batch_animals table (NOT temp tables)
-        for ba in batch.animals:
-            await self.conn.execute(
-                "INSERT INTO batch_animals (job_id, animal_data) VALUES ($1, $2)",
-                job_id, json.dumps(ba.animal.model_dump(), default=str),
-            )
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
-        result = dict(row)
-        for key in ("id", "organization_id"):
-            if key in result and result[key] is not None:
-                result[key] = str(result[key])
-        return result
+async def create_batch_job(
+    conn: asyncpg.Connection,
+    org_id: str,
+    animals: list[dict],
+) -> str:
+    """Process a batch of animal upserts and return the batch_id.
 
-    async def process_job(self, job_id: str):
-        """Process a batch job — called as a background task."""
-        job_uuid = uuid.UUID(job_id)
-        job = await self.conn.fetchrow("SELECT * FROM batch_jobs WHERE id = $1", job_uuid)
-        if not job:
-            return
+    Each animal dict is passed to upsert_animal.  A batch_jobs row is
+    created so the caller can reference it later via the returned UUID.
+    """
+    oid = uuid.UUID(org_id)
 
-        await self.conn.execute("UPDATE batch_jobs SET status = 'processing' WHERE id = $1", job_uuid)
+    # Create a tracking row in batch_jobs
+    row = await conn.fetchrow(
+        """INSERT INTO batch_jobs (organization_id, status, received)
+           VALUES ($1, 'processing', $2)
+           RETURNING id""",
+        oid,
+        len(animals),
+    )
+    batch_id = str(row["id"])
 
+    # Process each animal inline
+    succeeded = 0
+    failed = 0
+
+    for animal_data in animals:
         try:
-            # Fetch the org for this job
-            org_row = await self.conn.fetchrow(
-                "SELECT * FROM organizations WHERE id = $1", job["organization_id"]
-            )
-            if not org_row:
-                await self.conn.execute(
-                    "UPDATE batch_jobs SET status = 'failed', completed_at = $1 WHERE id = $2",
-                    datetime.now(timezone.utc), job_uuid,
-                )
-                return
-
-            org = dict(org_row)
-            for key in ("id",):
-                if key in org and org[key] is not None:
-                    org[key] = str(org[key])
-
-            service = AnimalService(self.conn, org)
-
-            # Fetch persisted animal data
-            animals = await self.conn.fetch(
-                "SELECT animal_data FROM batch_animals WHERE job_id = $1", job_uuid
-            )
-
-            succeeded = 0
-            failed = 0
-            results = {}
-
-            for i, record in enumerate(animals):
-                animal_data = json.loads(record["animal_data"])
-                try:
-                    animal_obj = AnimalCreate(**animal_data)
-                    await service.upsert_animal(animal_obj)
-                    succeeded += 1
-                except Exception as e:
-                    failed += 1
-                    results[str(i)] = {"error": str(e)}
-
-            await self.conn.execute(
-                """UPDATE batch_jobs SET status = 'completed', succeeded = $1, failed = $2,
-                   results = $3, completed_at = $4 WHERE id = $5""",
-                succeeded, failed, json.dumps(results), datetime.now(timezone.utc), job_uuid,
-            )
-
-            # Clean up batch_animals after processing
-            await self.conn.execute("DELETE FROM batch_animals WHERE job_id = $1", job_uuid)
-
+            await upsert_animal(conn, org_id, dict(animal_data))
+            succeeded += 1
         except Exception:
-            await self.conn.execute(
-                "UPDATE batch_jobs SET status = 'failed', completed_at = $1 WHERE id = $2",
-                datetime.now(timezone.utc), job_uuid,
-            )
+            failed += 1
 
-    async def get_job(self, job_id: str) -> Optional[dict]:
-        row = await self.conn.fetchrow("SELECT * FROM batch_jobs WHERE id = $1", uuid.UUID(job_id))
-        if not row:
-            return None
-        result = dict(row)
-        for key in ("id", "organization_id"):
-            if key in result and result[key] is not None:
-                result[key] = str(result[key])
-        return result
+    # Mark batch complete
+    await conn.execute(
+        """UPDATE batch_jobs
+           SET status = 'completed', succeeded = $1, failed = $2
+           WHERE id = $3""",
+        succeeded,
+        failed,
+        uuid.UUID(batch_id),
+    )
+
+    return batch_id
+
+
+async def process_batch(
+    conn: asyncpg.Connection,
+    org_id: str,
+    animals: list[dict],
+) -> dict:
+    """Process a list of animal upserts and return a summary.
+
+    Returns {"total": N, "created": X, "updated": Y, "errors": [...]}.
+    An animal is counted as "created" when the upsert returns a row whose
+    ``created_at`` equals ``updated_at`` (brand new); otherwise "updated".
+    """
+    total = len(animals)
+    created = 0
+    updated = 0
+    errors: list[dict] = []
+
+    for i, animal_data in enumerate(animals):
+        try:
+            result = await upsert_animal(conn, org_id, dict(animal_data))
+            # Distinguish create vs update: if created_at == updated_at the
+            # row was just inserted; the ON CONFLICT path sets updated_at = now()
+            # which will differ from created_at on an existing row.
+            if result.get("created_at") == result.get("updated_at"):
+                created += 1
+            else:
+                updated += 1
+        except Exception as exc:
+            errors.append({
+                "index": i,
+                "external_id": animal_data.get("external_id", "unknown"),
+                "error": str(exc),
+            })
+
+    return {
+        "total": total,
+        "created": created,
+        "updated": updated,
+        "errors": errors,
+    }
+
+
+async def get_batch_job(
+    conn: asyncpg.Connection,
+    batch_id: str,
+) -> Optional[dict]:
+    """Fetch a batch job record by its id."""
+    row = await conn.fetchrow(
+        "SELECT * FROM batch_jobs WHERE id = $1",
+        uuid.UUID(batch_id),
+    )
+    return _row_to_dict(row) if row else None

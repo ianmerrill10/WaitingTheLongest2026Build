@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   db:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.4-alpine
     environment:
       POSTGRES_USER: wtl
       POSTGRES_PASSWORD: wtlpass
@@ -11,18 +11,24 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wtl -d waitingthelongest"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   app:
     build: .
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://wtl:wtlpass@db:5432/waitingthelongest
-      API_VERSION: 0.1.0
-      CORS_ORIGINS: http://localhost:3000,https://waitingthelongest.com
-      PHOTO_STORAGE_BUCKET: animal-photos
+      WTL_DATABASE_URL: postgresql://wtl:wtlpass@db:5432/waitingthelongest
+      WTL_API_VERSION: "0.1.0"
+      WTL_CORS_ORIGINS: '["http://localhost:3000","https://waitingthelongest.com"]'
+      WTL_ENVIRONMENT: development
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

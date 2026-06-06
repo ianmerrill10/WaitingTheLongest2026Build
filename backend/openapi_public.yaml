@@ -1,0 +1,505 @@
+openapi: 3.1.0
+info:
+  title: WaitingTheLongest Public Read API
+  version: 0.1.0
+  summary: Public, unauthenticated read API for browsing adoptable dogs.
+  description: >
+    The read side consumed by the WaitingTheLongest frontend. It complements the
+    authenticated Shelter Intake API (openapi.yaml): shelters write through that
+    API, the public reads through this one.
+
+
+    No authentication is required. Requests are rate limited by client IP at 100
+    requests per minute; over the limit returns 429 with Retry-After. Every
+    response carries X-RateLimit-* headers.
+
+
+    Phase 1 serves dogs only — the server applies species = dog to every query,
+    so it is not a client parameter. All list, detail, and shelter shapes are
+    backed by the public database views (public.dog_listings, public.shelters_public)
+    and the public.platform_stats() function. Those views expose only
+    non-sensitive columns: an organization's EIN and contact details are never
+    returned by this API.
+
+
+    days_waiting is computed live (CURRENT_DATE - intake_date) at query time, so
+    it is always current; intake_date, the authoritative field shelters submit,
+    is returned alongside it.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: WaitingTheLongest
+    url: https://waitingthelongest.com
+
+servers:
+  - url: https://api.waitingthelongest.com
+    description: Production
+  - url: http://localhost:8000
+    description: Local reference server
+
+# No global security object: this API is public.
+
+tags:
+  - name: dogs
+    description: Browse and view adoptable dogs.
+  - name: shelters
+    description: Public shelter profiles.
+  - name: platform
+    description: Platform-wide statistics and featured listings.
+
+paths:
+  /v1/public/dogs:
+    get:
+      tags: [dogs]
+      summary: Browse adoptable dogs
+      description: >
+        Returns canonical, adoptable or pending dogs, newest-relevant first by
+        default (longest-waiting). Filters combine with AND. Cursor-paginated;
+        pass the returned next_cursor to page forward. The same filter set must
+        be repeated on each page request for a stable cursor.
+      operationId: listPublicDogs
+      parameters:
+        - $ref: '#/components/parameters/PostalCode'
+        - $ref: '#/components/parameters/RadiusMiles'
+        - $ref: '#/components/parameters/Breed'
+        - $ref: '#/components/parameters/SizeFilter'
+        - $ref: '#/components/parameters/AgeGroupFilter'
+        - $ref: '#/components/parameters/SexFilter'
+        - $ref: '#/components/parameters/GoodWithDogs'
+        - $ref: '#/components/parameters/GoodWithCats'
+        - $ref: '#/components/parameters/GoodWithKids'
+        - $ref: '#/components/parameters/SpecialNeeds'
+        - $ref: '#/components/parameters/StateFilter'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of dogs.
+          headers:
+            X-RateLimit-Limit:     { $ref: '#/components/headers/RateLimitLimit' }
+            X-RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            X-RateLimit-Reset:     { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicDogPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/public/dogs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/DogId'
+    get:
+      tags: [dogs]
+      summary: Get one dog
+      description: Full detail for a single dog, including nested organization info.
+      operationId: getPublicDog
+      responses:
+        '200':
+          description: The dog.
+          headers:
+            X-RateLimit-Limit:     { $ref: '#/components/headers/RateLimitLimit' }
+            X-RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            X-RateLimit-Reset:     { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicDogDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/public/shelters/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ShelterId'
+    get:
+      tags: [shelters]
+      summary: Get a shelter profile
+      description: >
+        Public profile for one organization plus the dogs it currently has
+        available (adoptable or pending). Sensitive fields are never included.
+      operationId: getPublicShelter
+      responses:
+        '200':
+          description: The shelter profile.
+          headers:
+            X-RateLimit-Limit:     { $ref: '#/components/headers/RateLimitLimit' }
+            X-RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            X-RateLimit-Reset:     { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicShelterProfile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/public/stats:
+    get:
+      tags: [platform]
+      summary: Platform statistics
+      description: >
+        Aggregate counts across the platform. avg_wait_days and longest_wait_days
+        are null when there are no adoptable dogs. Backed by platform_stats().
+      operationId: getPublicStats
+      responses:
+        '200':
+          description: Platform statistics.
+          headers:
+            X-RateLimit-Limit:     { $ref: '#/components/headers/RateLimitLimit' }
+            X-RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            X-RateLimit-Reset:     { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlatformStats' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/public/featured:
+    get:
+      tags: [platform]
+      summary: Featured dogs (longest-waiting)
+      description: The ten dogs that have been waiting the longest, longest first.
+      operationId: getPublicFeatured
+      responses:
+        '200':
+          description: Up to ten featured dogs.
+          headers:
+            X-RateLimit-Limit:     { $ref: '#/components/headers/RateLimitLimit' }
+            X-RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+            X-RateLimit-Reset:     { $ref: '#/components/headers/RateLimitReset' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeaturedResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+components:
+
+  headers:
+    RateLimitLimit:
+      description: Requests permitted per window for this IP.
+      schema: { type: integer, examples: [100] }
+    RateLimitRemaining:
+      description: Requests remaining in the current window.
+      schema: { type: integer, examples: [97] }
+    RateLimitReset:
+      description: Unix epoch seconds when the window resets.
+      schema: { type: integer, examples: [1717600000] }
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: { type: integer, examples: [42] }
+
+  parameters:
+    DogId:
+      name: id
+      in: path
+      required: true
+      description: The dog's server-assigned UUID.
+      schema: { type: string, format: uuid }
+    ShelterId:
+      name: id
+      in: path
+      required: true
+      description: The organization's server-assigned UUID.
+      schema: { type: string, format: uuid }
+    PostalCode:
+      name: postal_code
+      in: query
+      required: false
+      description: US postal code used as the center point for distance filtering and nearest sort.
+      schema:
+        type: string
+        pattern: '^\d{5}(-\d{4})?$'
+    RadiusMiles:
+      name: radius_miles
+      in: query
+      required: false
+      description: >
+        Limit results to dogs within this many miles of postal_code. Requires
+        postal_code; supplying it without postal_code returns 400.
+      schema:
+        type: number
+        minimum: 1
+        maximum: 500
+        default: 50
+    Breed:
+      name: breed
+      in: query
+      required: false
+      description: Case-insensitive match against primary or secondary breed.
+      schema: { type: string, maxLength: 80 }
+    SizeFilter:
+      name: size
+      in: query
+      required: false
+      schema: { $ref: '#/components/schemas/Size' }
+    AgeGroupFilter:
+      name: age_group
+      in: query
+      required: false
+      description: >
+        Platform age bucket (distinct from SAC age groups). Mapping by age in
+        months: puppy = under 12, young = 12 to 35, adult = 36 to 95,
+        senior = 96 and older.
+      schema: { $ref: '#/components/schemas/AgeGroup' }
+    SexFilter:
+      name: sex
+      in: query
+      required: false
+      schema: { $ref: '#/components/schemas/Sex' }
+    GoodWithDogs:
+      name: good_with_dogs
+      in: query
+      required: false
+      description: When true, only dogs flagged good_with_dogs = yes are returned.
+      schema: { type: boolean }
+    GoodWithCats:
+      name: good_with_cats
+      in: query
+      required: false
+      description: When true, only dogs flagged good_with_cats = yes are returned.
+      schema: { type: boolean }
+    GoodWithKids:
+      name: good_with_kids
+      in: query
+      required: false
+      description: When true, only dogs flagged good_with_kids = yes are returned.
+      schema: { type: boolean }
+    SpecialNeeds:
+      name: special_needs
+      in: query
+      required: false
+      description: Filter by special-needs status. Omit to include all dogs.
+      schema: { type: boolean }
+    StateFilter:
+      name: state
+      in: query
+      required: false
+      description: USPS 2-letter state code of the dog's location.
+      schema: { type: string, minLength: 2, maxLength: 2, pattern: '^[A-Z]{2}$' }
+    Sort:
+      name: sort
+      in: query
+      required: false
+      description: >
+        days_waiting (default) orders longest-waiting first. newest orders by
+        most recently listed. nearest orders by distance and requires
+        postal_code (otherwise 400).
+      schema:
+        type: string
+        enum: [days_waiting, newest, nearest]
+        default: days_waiting
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque pagination cursor from a previous response's next_cursor.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 50, default: 24 }
+
+  responses:
+    BadRequest:
+      description: Invalid parameter combination (e.g., radius_miles or nearest without postal_code).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: No public record with that id.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RateLimited:
+      description: Rate limit exceeded for this IP.
+      headers:
+        Retry-After:           { $ref: '#/components/headers/RetryAfter' }
+        X-RateLimit-Limit:     { $ref: '#/components/headers/RateLimitLimit' }
+        X-RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        X-RateLimit-Reset:     { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+
+    # ---- Controlled vocabularies (values identical to openapi.yaml) ----
+    Species:
+      type: string
+      description: SAC IOD species categories. Phase 1 returns only "dog".
+      enum: [dog, cat, rabbit, equine, small_mammal, bird, reptile_amphibian, farm_animal, other]
+    Size:
+      type: string
+      enum: [small, medium, large, xlarge]
+    Sex:
+      type: string
+      enum: [male, female, unknown]
+    AlteredStatus:
+      type: string
+      enum: [altered, intact, unknown]
+    CoatLength:
+      type: string
+      enum: [hairless, short, medium, long, wire, curly, double, unknown]
+    Trit:
+      type: string
+      description: Three-valued behavioral flag.
+      enum: [yes, no, unknown]
+    SacAgeGroup:
+      type: string
+      enum: [under_5_months, adult, unknown]
+    PublicListingStatus:
+      type: string
+      description: Only adoptable and pending dogs are exposed publicly.
+      enum: [adoptable, pending]
+    AgeGroup:
+      type: string
+      description: Platform age bucket derived from age in months.
+      enum: [puppy, young, adult, senior]
+    OrgType:
+      type: string
+      enum: [municipal, humane_society, spca, rescue, foster_network, sanctuary, other]
+    VerificationTier:
+      type: string
+      enum: [tier_0_self_asserted, tier_1_verified, tier_2_trusted]
+
+    PublicLocation:
+      type: object
+      description: Where the dog can be met.
+      properties:
+        postal_code: { type: [string, "null"] }
+        city:        { type: [string, "null"] }
+        state:       { type: [string, "null"], description: USPS 2-letter code. }
+        country:     { type: string, examples: [US] }
+        lat:         { type: [number, "null"] }
+        lng:         { type: [number, "null"] }
+
+    PublicOrganizationSummary:
+      type: object
+      description: Non-sensitive organization fields. Never includes EIN or contact details.
+      required: [id, legal_name, org_type, verification_tier]
+      properties:
+        id:                { type: string, format: uuid }
+        legal_name:        { type: string }
+        org_type:          { $ref: '#/components/schemas/OrgType' }
+        verification_tier: { $ref: '#/components/schemas/VerificationTier' }
+        city:              { type: [string, "null"] }
+        state:             { type: [string, "null"] }
+        country:           { type: string, examples: [US] }
+        website:           { type: [string, "null"], format: uri }
+
+    PublicDogSummary:
+      type: object
+      description: Card-level fields for browse and featured lists.
+      required: [id, name, species, days_waiting, intake_date, status, organization]
+      properties:
+        id:                { type: string, format: uuid }
+        name:              { type: string }
+        species:           { $ref: '#/components/schemas/Species' }
+        primary_breed:     { type: [string, "null"] }
+        secondary_breed:   { type: [string, "null"] }
+        is_mixed:          { type: [boolean, "null"] }
+        size:              { anyOf: [ { $ref: '#/components/schemas/Size' }, { type: "null" } ] }
+        sex:               { anyOf: [ { $ref: '#/components/schemas/Sex' }, { type: "null" } ] }
+        primary_color:     { type: [string, "null"] }
+        age_months:        { type: [integer, "null"] }
+        age_group:         { anyOf: [ { $ref: '#/components/schemas/AgeGroup' }, { type: "null" } ] }
+        primary_photo_url: { type: [string, "null"], format: uri }
+        days_waiting:
+          type: integer
+          minimum: 0
+          description: Live count of days since intake_date.
+        intake_date:       { type: string, format: date }
+        special_needs:     { type: boolean }
+        good_with_dogs:    { anyOf: [ { $ref: '#/components/schemas/Trit' }, { type: "null" } ] }
+        good_with_cats:    { anyOf: [ { $ref: '#/components/schemas/Trit' }, { type: "null" } ] }
+        good_with_kids:    { anyOf: [ { $ref: '#/components/schemas/Trit' }, { type: "null" } ] }
+        adoption_fee:      { type: [number, "null"] }
+        adoption_fee_currency: { type: string, examples: [USD] }
+        status:            { $ref: '#/components/schemas/PublicListingStatus' }
+        distance_miles:
+          type: [number, "null"]
+          description: Distance from the supplied postal_code; present only when sort=nearest or radius_miles was used.
+        location:          { $ref: '#/components/schemas/PublicLocation' }
+        organization:      { $ref: '#/components/schemas/PublicOrganizationSummary' }
+
+    PublicDogDetail:
+      description: Full detail for a single dog (summary fields plus the long-form fields).
+      allOf:
+        - $ref: '#/components/schemas/PublicDogSummary'
+        - type: object
+          properties:
+            description:     { type: [string, "null"] }
+            altered:         { anyOf: [ { $ref: '#/components/schemas/AlteredStatus' }, { type: "null" } ] }
+            coat_length:     { anyOf: [ { $ref: '#/components/schemas/CoatLength' }, { type: "null" } ] }
+            weight_kg:       { type: [number, "null"] }
+            sac_age_group:   { anyOf: [ { $ref: '#/components/schemas/SacAgeGroup' }, { type: "null" } ] }
+            photo_urls:
+              type: array
+              items: { type: string, format: uri }
+            listing_url:     { type: [string, "null"], format: uri }
+            first_listed_at: { type: string, format: date-time }
+
+    PublicShelterProfile:
+      description: A shelter's public profile plus its currently available dogs.
+      allOf:
+        - $ref: '#/components/schemas/PublicOrganizationSummary'
+        - type: object
+          required: [active_listings, dogs]
+          properties:
+            active_listings: { type: integer, minimum: 0 }
+            created_at:      { type: string, format: date-time }
+            dogs:
+              type: array
+              description: Adoptable or pending dogs at this shelter.
+              items: { $ref: '#/components/schemas/PublicDogSummary' }
+
+    PublicDogPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicDogSummary' }
+        next_cursor:
+          type: [string, "null"]
+          description: Pass as cursor to fetch the next page; null when the list is exhausted.
+
+    FeaturedResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/PublicDogSummary' }
+
+    PlatformStats:
+      type: object
+      required: [total_dogs, total_shelters, adoptions_this_month]
+      properties:
+        total_dogs:
+          type: integer
+          minimum: 0
+          description: Adoptable canonical dogs currently listed.
+        total_shelters:
+          type: integer
+          minimum: 0
+          description: Organizations with at least one active listing.
+        adoptions_this_month:
+          type: integer
+          minimum: 0
+          description: Recorded adoption outcomes since the start of the current month.
+        avg_wait_days:
+          type: [number, "null"]
+          description: Mean days waiting across adoptable dogs; null when there are none.
+        longest_wait_days:
+          type: [integer, "null"]
+          description: Maximum days waiting across adoptable dogs; null when there are none.
+
+    Problem:
+      type: object
+      description: RFC 9457 problem detail.
+      properties:
+        type:     { type: string, format: uri, default: about:blank }
+        title:    { type: string }
+        status:   { type: integer }
+        detail:   { type: string }
+        instance: { type: string }

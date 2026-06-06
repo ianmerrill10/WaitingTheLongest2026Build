@@ -2,13 +2,15 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://wtl:wtlpass@localhost:5432/waitingthelongest"
-    api_version: str = "0.1.0"
-    cors_origins: str = "http://localhost:3000"
-    photo_storage_bucket: str = "animal-photos"
-    photo_storage_url: str = ""  # S3/Supabase storage base URL
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/wtl"
+    API_VERSION: str = "v1"
+    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    PUBLIC_RATE_LIMIT: int = 100  # requests per minute for public endpoints
+    INTAKE_RATE_LIMIT: int = 5000  # requests per hour for tier_2_trusted
+    LOG_LEVEL: str = "INFO"
+    ENVIRONMENT: str = "development"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_prefix": "WTL_", "env_file": ".env"}
 
 
 settings = Settings()

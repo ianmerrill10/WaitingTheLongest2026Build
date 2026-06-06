@@ -1,48 +1,31 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
-from ..models.animal import BatchSubmitRequest
-from ..models.batch import BatchJobResponse
-from ..dependencies import get_org
-from ..services.batch_service import BatchService
-from ..database import get_db
+"""Batch intake endpoint — accept up to 1000 animals in a single request.
+
+Processes the batch inline via a background task and returns the job ID
+immediately with a 202 Accepted status.
+"""
+
+from fastapi import APIRouter, Depends
 import asyncpg
 
-router = APIRouter(prefix="/v1", tags=["Batch"])
+from ..database import get_db
+from ..dependencies import get_org
+from ..services import batch_service
+from ..models.animal import BatchSubmitRequest
+
+router = APIRouter(prefix="/v1/intake", tags=["Batch Intake"])
 
 
-@router.post("/animals/batch", response_model=BatchJobResponse, status_code=202)
+@router.post("/batch", status_code=202)
 async def submit_batch(
-    batch: BatchSubmitRequest,
-    request: Request,
-    background_tasks: BackgroundTasks,
-    org=Depends(get_org),
+    data: BatchSubmitRequest,
+    org: dict = Depends(get_org),
     conn: asyncpg.Connection = Depends(get_db),
 ):
-    service = BatchService(conn, org)
-    job = await service.create_job(batch)
-    background_tasks.add_task(process_batch_job, str(job["id"]))
-    return job
+    """Submit a batch of animal records for upsert.
 
-
-async def process_batch_job(job_id: str):
-    """Background task to process a batch job."""
-    from ..database import _pool
-    if _pool is None:
-        return
-    async with _pool.acquire() as conn:
-        service = BatchService(conn, None)
-        await service.process_job(job_id)
-
-
-@router.get("/batch/{job_id}", response_model=BatchJobResponse)
-async def get_batch_status(
-    job_id: str,
-    org=Depends(get_org),
-    conn: asyncpg.Connection = Depends(get_db),
-):
-    service = BatchService(conn, org)
-    job = await service.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Batch job not found")
-    if str(job["organization_id"]) != str(org["id"]):
-        raise HTTPException(status_code=403, detail="Not your batch job")
-    return job
+    Accepts up to 1000 animals and processes them inline.
+    Returns counts of created, updated, and errored records.
+    """
+    animals_data = [a.model_dump(exclude_none=False) for a in data.animals]
+    result = await batch_service.process_batch(conn, org["id"], animals_data)
+    return result

@@ -1,18 +1,34 @@
-from pydantic import BaseModel
-from typing import List, Optional
+"""Common models shared across the API."""
 
-
-class FieldError(BaseModel):
-    field: str
-    message: str
-    code: Optional[str] = None
+from datetime import datetime
+from pydantic import BaseModel, Field
+from typing import Any
 
 
 class Problem(BaseModel):
-    """RFC 9457 problem+json error response."""
+    """RFC 9457 Problem Details response."""
+
     type: str = "about:blank"
     title: str
     status: int
-    detail: str
-    instance: Optional[str] = None
-    errors: List[FieldError] = []
+    detail: str | None = None
+    instance: str | None = None
+    errors: list[dict[str, Any]] | None = None
+
+
+class PaginationMeta(BaseModel):
+    """Cursor-based pagination metadata."""
+
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class HealthResponse(BaseModel):
+    status: str = "healthy"
+    version: str
+    database: str = "connected"
+    timestamp: datetime

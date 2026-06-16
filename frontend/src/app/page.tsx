@@ -18,6 +18,13 @@ export default async function HomePage() {
 
   return (
     <div>
+      {/* Preview banner */}
+      <div className="bg-amber-50 border-b border-amber-200 py-2.5 px-4 text-center">
+        <p className="text-sm text-amber-800 font-medium">
+          🚧 This site is not live and not for public view. Data has not been verified. For internal preview only.
+        </p>
+      </div>
+
       {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-wtl-cream via-white to-wtl-warm overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24">

@@ -2,10 +2,10 @@ import { Activity, AlertTriangle, CalendarDays, Heart } from "lucide-react";
 
 interface StatsBarProps {
   stats: {
-    total_animals: number;
+    total_dogs: number;
     avg_wait_days: number;
     longest_wait_days: number;
-    adopted_this_month: number;
+    adoptions_this_month: number;
   } | null;
 }
 
@@ -22,7 +22,7 @@ export function StatsBar({ stats }: StatsBarProps) {
               <span className="text-xs font-bold uppercase tracking-widest text-wtl-muted font-display">At Risk</span>
             </div>
             <span className="font-display font-black text-5xl text-wtl-navy">
-              {stats.total_animals.toLocaleString()}
+              {stats.total_dogs.toLocaleString()}
             </span>
           </div>
 
@@ -52,7 +52,7 @@ export function StatsBar({ stats }: StatsBarProps) {
               <span className="text-xs font-bold uppercase tracking-widest text-wtl-sage font-display">Rescued This Month</span>
             </div>
             <span className="font-display font-black text-5xl text-white">
-              {stats.adopted_this_month.toLocaleString()}
+              {stats.adoptions_this_month.toLocaleString()}
             </span>
           </div>
         </div>

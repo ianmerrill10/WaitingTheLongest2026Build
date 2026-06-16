@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, Clock, ArrowRight } from "lucide-react";
+import { AlertTriangle, Clock, ArrowRight, Heart } from "lucide-react";
 import { DogCard } from "@/components/DogCard";
 import { StatsBar } from "@/components/StatsBar";
 import { getFeatured, getStats } from "@/lib/api";

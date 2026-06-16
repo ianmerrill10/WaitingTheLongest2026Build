@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Clock } from "lucide-react";
-import { BLOG_POSTS } from "../page";
+import { BLOG_POSTS } from "../_data";
 
 interface PageProps {
   params: Promise<{ slug: string }>;

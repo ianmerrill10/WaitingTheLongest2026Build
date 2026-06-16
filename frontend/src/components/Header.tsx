@@ -34,6 +34,12 @@ export function Header() {
               About
             </Link>
             <Link
+              href="/submit"
+              className="text-wtl-coral hover:text-wtl-coral/80 transition-colors font-semibold text-sm border border-wtl-coral/30 rounded-lg px-3 py-1.5 hover:bg-wtl-coral/5"
+            >
+              + Submit a Dog
+            </Link>
+            <Link
               href="/dogs?sort=days_waiting_desc"
               className="btn-primary text-sm"
             >
@@ -69,6 +75,13 @@ export function Header() {
                 onClick={() => setMobileOpen(false)}
               >
                 About
+              </Link>
+              <Link
+                href="/submit"
+                className="text-wtl-coral font-semibold px-2 text-sm"
+                onClick={() => setMobileOpen(false)}
+              >
+                + Submit a Dog
               </Link>
               <Link
                 href="/dogs?sort=days_waiting_desc"

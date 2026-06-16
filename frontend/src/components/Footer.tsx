@@ -39,22 +39,45 @@ export function Footer() {
                   Longest Waiting
                 </Link>
               </li>
+              <li>
+                <Link href="/submit" className="text-wtl-coral hover:text-wtl-coral/70 transition-colors font-semibold">
+                  Submit a Dog
+                </Link>
+              </li>
             </ul>
           </div>
 
-          {/* For Shelters */}
+          {/* For Shelters + Legal */}
           <div>
             <h3 className="font-semibold text-wtl-navy mb-3">For Shelters</h3>
-            <p className="text-sm text-wtl-muted leading-relaxed">
+            <p className="text-sm text-wtl-muted leading-relaxed mb-2">
               Are you a shelter or rescue? List your longest-waiting dogs for
               free through our Shelter Intake API.
             </p>
             <a
               href="mailto:shelters@waitingthelongest.com"
-              className="text-sm text-wtl-sky hover:text-wtl-coral transition-colors mt-2 inline-block"
+              className="text-sm text-wtl-sky hover:text-wtl-coral transition-colors mb-4 inline-block"
             >
               shelters@waitingthelongest.com
             </a>
+            <h3 className="font-semibold text-wtl-navy mb-2 mt-4">Legal</h3>
+            <ul className="space-y-1.5 text-sm">
+              <li>
+                <Link href="/terms/submission" className="text-wtl-muted hover:text-wtl-coral transition-colors">
+                  Submission Terms
+                </Link>
+              </li>
+              <li>
+                <a href="mailto:privacy@waitingthelongest.com" className="text-wtl-muted hover:text-wtl-coral transition-colors">
+                  Privacy Policy
+                </a>
+              </li>
+              <li>
+                <a href="mailto:abuse@waitingthelongest.com" className="text-wtl-muted hover:text-wtl-coral transition-colors">
+                  Report Abuse
+                </a>
+              </li>
+            </ul>
           </div>
         </div>
 

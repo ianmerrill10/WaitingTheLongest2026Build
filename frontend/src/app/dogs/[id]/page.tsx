@@ -24,6 +24,8 @@ import {
   formatCurrency,
   PLACEHOLDER_DOG_IMAGE,
 } from "@/lib/utils";
+import { WaitCounter } from "@/components/WaitCounter";
+import { ShareKit } from "@/components/ShareKit";
 
 export const revalidate = 60; // ISR: revalidate every 60 seconds
 
@@ -262,13 +264,27 @@ export default async function DogDetailPage({ params }: PageProps) {
               <p className="text-lg text-wtl-muted">{breedDisplay}</p>
             </div>
 
+            {/* Live wait counter — replaces static badge */}
+            {dog.intake_date ? (
+              <WaitCounter intakeDate={dog.intake_date} size="large" className="mb-6" />
+            ) : (
+              <div className="mb-6">
+                <span className={`badge ${waitBadgeColor} text-sm`}>
+                  <Clock className="w-3.5 h-3.5 mr-1" />
+                  Waiting {formatWaitTime(dog.days_waiting)}
+                </span>
+              </div>
+            )}
+
             {/* Key stats row */}
             <div className="flex flex-wrap items-center gap-3 mb-6">
-              {/* Days waiting badge */}
+              {/* Days waiting badge (fallback for cards without intake_date) */}
+              {!dog.intake_date && (
               <span className={`badge ${waitBadgeColor} text-sm`}>
                 <Clock className="w-3.5 h-3.5 mr-1" />
                 Waiting {formatWaitTime(dog.days_waiting)}
               </span>
+              )}
 
               {/* Age */}
               <span className="badge bg-gray-100 text-gray-700 text-sm">
@@ -408,6 +424,17 @@ export default async function DogDetailPage({ params }: PageProps) {
                   </Link>
                 </div>
               </div>
+            </div>
+
+            {/* Share kit */}
+            <div className="mb-6">
+              <ShareKit
+                dogName={dog.name}
+                breed={`${dog.primary_breed}${dog.secondary_breed ? ` / ${dog.secondary_breed}` : ""}${dog.is_mixed ? " Mix" : ""}`}
+                waitTime={formatWaitTime(dog.days_waiting)}
+                dogUrl={`https://waitingthelongest.com/dogs/${dog.id}`}
+                primaryPhotoUrl={dog.primary_photo_url ?? undefined}
+              />
             </div>
 
             {/* Mobile CTA — repeated at bottom for easy thumb access */}

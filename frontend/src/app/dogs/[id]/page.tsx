@@ -372,13 +372,13 @@ export default async function DogDetailPage({ params }: PageProps) {
                 <DetailRow
                   icon={Dog}
                   label="Coat"
-                  value={coatDisplay[dog.coat_length] || dog.coat_length}
+                  value={coatDisplay[dog.coat_length ?? ""] || dog.coat_length}
                 />
                 <DetailRow icon={Dog} label="Color" value={dog.primary_color} />
                 <DetailRow
                   icon={Scissors}
                   label="Altered"
-                  value={alteredDisplay[dog.altered] || dog.altered}
+                  value={alteredDisplay[dog.altered ?? ""] || dog.altered}
                 />
                 <DetailRow icon={Dog} label="Sex" value={formatSex(dog.sex)} />
               </div>
@@ -399,7 +399,7 @@ export default async function DogDetailPage({ params }: PageProps) {
                   icon={Calendar}
                   label="Intake Type"
                   value={
-                    intakeTypeDisplay[dog.intake_type] || dog.intake_type
+                    intakeTypeDisplay[dog.intake_type ?? ""] || dog.intake_type
                   }
                 />
               </div>

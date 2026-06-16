@@ -138,7 +138,7 @@ function buildQuery(filters: Record<string, unknown>): string {
 // ---- Public API endpoints ----
 
 export async function getDogs(filters: DogFilters = {}): Promise<DogPage> {
-  const query = buildQuery(filters);
+  const query = buildQuery(filters as Record<string, unknown>);
   return fetchAPI<DogPage>(`/v1/public/dogs${query}`);
 }
 

@@ -9,22 +9,22 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // WTL brand colors — warm, hopeful, approachable
         wtl: {
-          coral: "#FF6B6B",       // primary CTA
-          "coral-dark": "#E55A5A",
-          gold: "#FFD93D",        // accents, badges
-          sage: "#6BCB77",        // success, adopted
-          sky: "#4D96FF",         // links, info
-          navy: "#1A1A2E",        // headings
-          cream: "#FFF8F0",       // page background
-          warm: "#F5EDE3",        // card backgrounds
-          muted: "#8B8B8B",       // secondary text
+          coral: "#E11D48",
+          "coral-dark": "#BE123C",
+          gold: "#FACC15",
+          sage: "#15803D",
+          sky: "#2563EB",
+          navy: "#09090B",
+          cream: "#FAFAFA",
+          warm: "#E5E5E5",
+          muted: "#737373",
         },
       },
       fontFamily: {
-        display: ["Georgia", "serif"],
-        body: ["system-ui", "-apple-system", "sans-serif"],
+        display: ["var(--font-oswald)", "sans-serif"],
+        body: ["var(--font-inter)", "sans-serif"],
+        sans: ["var(--font-inter)", "sans-serif"],
       },
     },
   },

@@ -1,99 +1,84 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
-import { Heart, Menu, X, Search } from "lucide-react";
+import Link from "next/link";
+import { Menu, X, AlertOctagon } from "lucide-react";
 
 export function Header() {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
+    <header className="sticky top-0 z-50 w-full bg-wtl-cream border-b-4 border-wtl-navy">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
+        <div className="flex justify-between items-center h-20">
           <Link href="/" className="flex items-center gap-2 group">
-            <Heart className="w-7 h-7 text-wtl-coral group-hover:scale-110 transition-transform" />
-            <span className="font-display text-xl font-bold text-wtl-navy">
+            <AlertOctagon className="w-8 h-8 text-wtl-coral group-hover:animate-pulse" strokeWidth={2.5} />
+            <span className="font-display font-black text-2xl tracking-tight text-wtl-navy uppercase">
               Waiting<span className="text-wtl-coral">The</span>Longest
             </span>
           </Link>
 
-          {/* Desktop nav */}
+          {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-8">
-            <Link
-              href="/dogs"
-              className="text-wtl-navy hover:text-wtl-coral transition-colors font-medium"
-            >
+            <Link href="/dogs" className="font-display font-bold uppercase tracking-widest text-sm text-wtl-navy hover:text-wtl-coral transition-colors">
               Find Dogs
             </Link>
-            <Link
-              href="/about"
-              className="text-wtl-navy hover:text-wtl-coral transition-colors font-medium"
-            >
+            <Link href="/about" className="font-display font-bold uppercase tracking-widest text-sm text-wtl-navy hover:text-wtl-coral transition-colors">
               About
             </Link>
-            <Link
-              href="/submit"
-              className="text-wtl-coral hover:text-wtl-coral/80 transition-colors font-semibold text-sm border border-wtl-coral/30 rounded-lg px-3 py-1.5 hover:bg-wtl-coral/5"
-            >
+            <Link href="/blog" className="font-display font-bold uppercase tracking-widest text-sm text-wtl-navy hover:text-wtl-coral transition-colors">
+              Stories
+            </Link>
+            <Link href="/faq" className="font-display font-bold uppercase tracking-widest text-sm text-wtl-navy hover:text-wtl-coral transition-colors">
+              FAQ
+            </Link>
+            <Link href="/submit" className="btn-secondary text-sm py-2 px-4">
               + Submit a Dog
             </Link>
-            <Link
-              href="/dogs?sort=days_waiting_desc"
-              className="btn-primary text-sm"
-            >
-              <Search className="w-4 h-4 mr-1.5" />
+            <Link href="/dogs?sort=days_waiting_desc" className="btn-primary text-sm py-2 px-4">
               Browse All Dogs
             </Link>
           </nav>
 
-          {/* Mobile menu toggle */}
+          {/* Mobile toggle */}
           <button
-            className="md:hidden p-2 text-wtl-navy"
-            onClick={() => setMobileOpen(!mobileOpen)}
+            className="md:hidden p-2 text-wtl-navy hover:text-wtl-coral transition-colors"
+            onClick={() => setIsOpen(!isOpen)}
             aria-label="Toggle menu"
           >
-            {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            {isOpen ? <X className="w-8 h-8" /> : <Menu className="w-8 h-8" />}
           </button>
         </div>
-
-        {/* Mobile nav */}
-        {mobileOpen && (
-          <div className="md:hidden pb-4 border-t border-gray-100 mt-2 pt-4">
-            <div className="flex flex-col gap-4">
-              <Link
-                href="/dogs"
-                className="text-wtl-navy font-medium px-2"
-                onClick={() => setMobileOpen(false)}
-              >
-                Find Dogs
-              </Link>
-              <Link
-                href="/about"
-                className="text-wtl-navy font-medium px-2"
-                onClick={() => setMobileOpen(false)}
-              >
-                About
-              </Link>
-              <Link
-                href="/submit"
-                className="text-wtl-coral font-semibold px-2 text-sm"
-                onClick={() => setMobileOpen(false)}
-              >
-                + Submit a Dog
-              </Link>
-              <Link
-                href="/dogs?sort=days_waiting_desc"
-                className="btn-primary text-sm text-center"
-                onClick={() => setMobileOpen(false)}
-              >
-                Browse All Dogs
-              </Link>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Mobile Nav */}
+      {isOpen && (
+        <div className="md:hidden bg-white border-b-4 border-wtl-navy">
+          <div className="px-4 pt-2 pb-6 flex flex-col gap-1">
+            {[
+              { href: "/dogs", label: "Find Dogs" },
+              { href: "/about", label: "About" },
+              { href: "/blog", label: "Stories" },
+              { href: "/faq", label: "FAQ" },
+            ].map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                className="block py-3 border-b border-wtl-warm font-display font-bold uppercase tracking-widest text-wtl-navy hover:text-wtl-coral transition-colors"
+                onClick={() => setIsOpen(false)}
+              >
+                {label}
+              </Link>
+            ))}
+            <Link href="/submit" className="btn-secondary w-full text-center mt-4" onClick={() => setIsOpen(false)}>
+              + Submit a Dog
+            </Link>
+            <Link href="/dogs?sort=days_waiting_desc" className="btn-primary w-full text-center mt-2" onClick={() => setIsOpen(false)}>
+              Browse All Dogs
+            </Link>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Heart, Clock, ArrowRight, Search } from "lucide-react";
+import { AlertTriangle, Clock, ArrowRight } from "lucide-react";
 import { DogCard } from "@/components/DogCard";
 import { StatsBar } from "@/components/StatsBar";
 import { getFeatured, getStats } from "@/lib/api";
@@ -26,68 +26,65 @@ export default async function HomePage() {
       </div>
 
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-br from-wtl-cream via-white to-wtl-warm overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24">
-          <div className="max-w-3xl">
-            <div className="flex items-center gap-2 mb-4">
-              <Heart className="w-6 h-6 text-wtl-coral" />
-              <span className="text-sm font-semibold text-wtl-coral uppercase tracking-wide">
-                Every Day Counts
-              </span>
+      <section className="relative w-full bg-wtl-cream border-b-4 border-wtl-navy py-20 md:py-32 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="max-w-4xl">
+            <div className="inline-flex items-center gap-2 bg-wtl-gold text-wtl-navy font-display font-black uppercase tracking-widest px-4 py-2 mb-6 border-2 border-wtl-navy shadow-[4px_4px_0px_0px_rgba(9,9,11,1)]">
+              <AlertTriangle className="w-4 h-4" />
+              Urgent Crisis Directive
             </div>
 
-            <h1 className="font-display text-4xl md:text-6xl font-bold text-wtl-navy leading-tight mb-6">
-              Meet the dogs who have been{" "}
-              <span className="text-wtl-coral">waiting the longest</span>
+            <h1 className="font-display font-black text-6xl sm:text-7xl md:text-8xl text-wtl-navy uppercase leading-[0.9] tracking-tighter mb-8">
+              They are running<br />
+              <span className="text-wtl-coral">out of time.</span>
             </h1>
 
-            <p className="text-lg text-wtl-muted leading-relaxed mb-8 max-w-2xl">
-              Every dog deserves a home. We surface the shelter dogs who have
-              been overlooked the longest, so you can give a second chance to
-              the ones who need it most.
+            <p className="text-xl md:text-2xl text-wtl-navy font-medium mb-10 max-w-2xl leading-relaxed border-l-4 border-wtl-coral pl-6">
+              Every second counts. We rank shelter dogs by the days they&apos;ve been forgotten.
+              The ones at the top of this list are in immediate danger.{" "}
+              <strong className="font-black">Stop scrolling. Start saving.</strong>
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
               <Link href="/dogs?sort=days_waiting_desc" className="btn-primary text-lg px-8 py-4">
-                <Search className="w-5 h-5 mr-2" />
-                Find Your Dog
+                View Most Urgent Dogs
               </Link>
               <Link href="/about" className="btn-secondary text-lg px-8 py-4">
-                Learn More
+                Learn How This Works
               </Link>
             </div>
           </div>
         </div>
 
-        {/* Decorative element */}
-        <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-wtl-coral/5 rounded-full blur-3xl" />
+        {/* Brutalist background element */}
+        <div className="absolute top-0 right-0 w-1/2 h-full opacity-5 pointer-events-none flex items-center justify-end overflow-hidden">
+          <span className="font-display font-black text-[20rem] leading-none text-wtl-navy -mr-20 select-none">
+            00:00
+          </span>
+        </div>
       </section>
 
       {/* Stats Section */}
-      {stats && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-10">
-          <StatsBar stats={stats} />
-        </section>
-      )}
+      {stats && <StatsBar stats={stats} />}
 
       {/* Longest Waiting Section */}
       {featured?.longest_waiting && featured.longest_waiting.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center justify-between mb-8 border-b-4 border-wtl-navy pb-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Clock className="w-5 h-5 text-wtl-coral" />
-                <h2 className="font-display text-2xl md:text-3xl font-bold text-wtl-navy">
-                  Waiting the Longest
+                <h2 className="font-display font-black text-3xl md:text-4xl text-wtl-navy uppercase tracking-tight">
+                  Most Urgent
                 </h2>
               </div>
-              <p className="text-wtl-muted">
-                These dogs have been in shelters the longest. They need you.
+              <p className="text-wtl-muted font-medium">
+                These dogs have been waiting the longest. They need you now.
               </p>
             </div>
             <Link
               href="/dogs?sort=days_waiting_desc"
-              className="hidden md:flex items-center gap-1 text-wtl-sky hover:text-wtl-coral transition-colors font-medium"
+              className="hidden md:flex items-center gap-1 font-display font-bold uppercase tracking-widest text-sm text-wtl-coral hover:underline"
             >
               View All <ArrowRight className="w-4 h-4" />
             </Link>
@@ -137,22 +134,26 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* CTA Section */}
-      <section className="bg-wtl-cream py-16">
+      {/* Shelter CTA Section */}
+      <section className="border-t-4 border-wtl-navy bg-wtl-navy py-16">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="font-display text-3xl font-bold text-wtl-navy mb-4">
-            Are you a shelter or rescue?
+          <div className="inline-block bg-wtl-gold text-wtl-navy font-display font-black uppercase tracking-widest px-4 py-1 mb-6 text-sm border-2 border-white/20">
+            For Shelters &amp; Rescues
+          </div>
+          <h2 className="font-display font-black text-4xl md:text-5xl text-white uppercase mb-4">
+            List your longest-waiting dogs. Free.
           </h2>
-          <p className="text-wtl-muted mb-8 leading-relaxed">
-            List your longest-waiting dogs for free through our Shelter Intake
-            API. Help your hardest-to-place animals find homes faster.
+          <p className="text-white/70 mb-8 text-lg leading-relaxed">
+            Help your hardest-to-place animals find homes faster. Our intake portal takes 5 minutes.
           </p>
-          <a
-            href="mailto:shelters@waitingthelongest.com"
-            className="btn-primary text-lg"
-          >
-            Get Started
-          </a>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link href="/submit" className="btn-primary text-lg px-8 py-4">
+              Submit a Dog
+            </Link>
+            <a href="mailto:shelters@waitingthelongest.com" className="inline-flex items-center justify-center px-8 py-4 border-2 border-white text-white font-display font-bold uppercase tracking-widest hover:bg-white hover:text-wtl-navy transition-colors">
+              Contact Us
+            </a>
+          </div>
         </div>
       </section>
 

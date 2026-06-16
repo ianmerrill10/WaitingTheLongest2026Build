@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-wtl-cream text-wtl-navy font-body antialiased;
+    @apply bg-wtl-cream text-wtl-navy antialiased selection:bg-wtl-gold selection:text-wtl-navy font-body;
   }
 
   h1, h2, h3, h4 {
@@ -15,31 +15,40 @@
 @layer components {
   .btn-primary {
     @apply inline-flex items-center justify-center px-6 py-3
-           bg-wtl-coral text-white font-semibold rounded-lg
-           hover:bg-wtl-coral-dark transition-colors duration-200
+           bg-wtl-coral text-white font-display font-bold tracking-widest uppercase
+           transition-all duration-200 border-2 border-transparent
+           hover:bg-wtl-coral-dark hover:shadow-[4px_4px_0px_0px_rgba(9,9,11,1)]
+           active:translate-y-0.5 active:shadow-none
            focus:outline-none focus:ring-2 focus:ring-wtl-coral focus:ring-offset-2;
   }
 
   .btn-secondary {
     @apply inline-flex items-center justify-center px-6 py-3
-           bg-white text-wtl-navy font-semibold rounded-lg border border-gray-200
-           hover:bg-gray-50 transition-colors duration-200
-           focus:outline-none focus:ring-2 focus:ring-wtl-sky focus:ring-offset-2;
+           bg-white border-2 border-wtl-navy text-wtl-navy font-display font-bold tracking-widest uppercase
+           transition-all duration-200
+           hover:bg-wtl-navy hover:text-white hover:shadow-[4px_4px_0px_0px_rgba(225,29,72,1)]
+           active:translate-y-0.5 active:shadow-none
+           focus:outline-none focus:ring-2 focus:ring-wtl-navy focus:ring-offset-2;
   }
 
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-100
-           hover:shadow-md transition-shadow duration-200;
+    @apply bg-white border-2 border-wtl-navy overflow-hidden
+           transition-all duration-200
+           hover:shadow-[8px_8px_0px_0px_rgba(9,9,11,1)];
   }
 
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full
-           text-xs font-medium;
+    @apply inline-flex items-center px-2 py-1
+           text-xs font-bold uppercase tracking-widest
+           border-2 border-wtl-navy bg-white text-wtl-navy
+           shadow-[2px_2px_0px_0px_rgba(9,9,11,1)];
   }
 
   .input-field {
-    @apply w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg
-           text-wtl-navy placeholder-wtl-muted
-           focus:outline-none focus:ring-2 focus:ring-wtl-sky focus:border-transparent;
+    @apply w-full px-4 py-3 bg-white border-2 border-wtl-navy
+           text-wtl-navy font-medium rounded-none
+           focus:outline-none focus:ring-0 focus:border-wtl-coral
+           focus:shadow-[4px_4px_0px_0px_rgba(225,29,72,1)]
+           transition-all placeholder:text-wtl-muted;
   }
 }

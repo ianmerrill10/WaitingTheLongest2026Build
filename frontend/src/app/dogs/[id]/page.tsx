@@ -26,6 +26,7 @@ import {
 } from "@/lib/utils";
 import { WaitCounter } from "@/components/WaitCounter";
 import { ShareKit } from "@/components/ShareKit";
+import { AffiliateBlock } from "@/components/AffiliateBlock";
 
 export const revalidate = 60; // ISR: revalidate every 60 seconds
 
@@ -424,6 +425,11 @@ export default async function DogDetailPage({ params }: PageProps) {
                   </Link>
                 </div>
               </div>
+            </div>
+
+            {/* Affiliate products */}
+            <div className="mb-6">
+              <AffiliateBlock dogName={dog.name} size={dog.size ?? null} />
             </div>
 
             {/* Share kit */}

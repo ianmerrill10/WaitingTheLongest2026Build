@@ -874,13 +874,24 @@ export default function SubmitPage() {
     setSubmitting(true);
 
     try {
-      // Note: photo upload to Supabase Storage happens here in a real
-      // implementation. For MVP, we skip the upload and just send URLs.
-      // Photos will be wired to storage in the next sprint.
+      // Upload photos to Supabase Storage first, collect public URLs
+      const photoUrls: string[] = [];
+      for (const file of photos) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("submission_id", "pending");
+        const uploadRes = await fetch("/api/upload-photo", { method: "POST", body: fd });
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          photoUrls.push(uploadData.url);
+        }
+        // Non-fatal: if a photo fails to upload, continue without it
+      }
+
       const payload = {
         ...form,
-        photo_urls: [],
-        primary_photo_url: null,
+        photo_urls: photoUrls,
+        primary_photo_url: photoUrls[0] ?? null,
       };
 
       const res = await fetch("/api/submit", {
